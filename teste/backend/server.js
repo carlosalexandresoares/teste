@@ -18,18 +18,24 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("Usuário conectado:", socket.id);
 
-  socket.on("chat-message", (msg) => {
-    socket.broadcast.emit("chat-message", msg);
+  socket.on("join-room", (roomId) => {
+    socket.join(roomId);
+    console.log(`Usuário ${socket.id} entrou na sala ${roomId}`);
   });
 
-  socket.on("open-video", (videoId) => {
-    socket.broadcast.emit("open-video", videoId);
+  socket.on("chat-message", ({ roomId, msg }) => {
+    socket.to(roomId).emit("chat-message", msg);
+  });
+
+  socket.on("open-video", ({ roomId, videoId }) => {
+    socket.to(roomId).emit("open-video", videoId);
   });
 
   socket.on("disconnect", () => {
     console.log("Usuário desconectado:", socket.id);
   });
 });
+
 
 server.listen(3000, () => {
   console.log("🔥 Servidor rodando em http://localhost:3000");

@@ -1,5 +1,20 @@
 const socket = io("http://localhost:3000");
 
+socket.on("connect", () => {
+  console.log("Conectado ao servidor:", socket.id);
+});
+
+const params = new URLSearchParams(window.location.search);
+let roomId = params.get("sala");
+
+if (!roomId) {
+  roomId = Math.random().toString(36).substring(2, 8);
+  window.location.search = `?sala=${roomId}`;
+}
+
+socket.emit("join-room", roomId);
+
+
 const input = document.getElementById("chat-dig");
 const btnEnviar = document.getElementById("enviar");
 const messages = document.getElementById("messages");
@@ -21,11 +36,16 @@ function sendMessage() {
   if (!text) return;
 
   addMessage(text, "user");
-  socket.emit("chat-message", text);
-  checkYouTubeLink(text);
 
+  socket.emit("chat-message", {
+    roomId,
+    msg: text,
+  });
+
+  checkYouTubeLink(text);
   input.value = "";
 }
+
 
 /* Criar bolha */
 function addMessage(text, type) {
