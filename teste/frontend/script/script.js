@@ -12,7 +12,10 @@ if (!roomId) {
   window.location.search = `?sala=${roomId}`;
 }
 
-socket.emit("join-room", roomId);
+socket.on("connect", () => {
+  console.log("Conectado:", socket.id);
+  socket.emit("join-room", roomId);
+});
 
 
 const input = document.getElementById("chat-dig");
@@ -70,14 +73,81 @@ function checkYouTubeLink(text) {
 
 /* Abrir YouTube */
 function openYouTube(videoId) {
-  youtubeFrame.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-  youtubeContainer.classList.add("active");
+   youtubeContainer.classList.add("active");
+  loadPlayer(videoId);
+
+  socket.emit("open-video", {
+    roomId,
+    videoId,
+  });
 }
+
+let player;
+let apiReady = false;
+let pendingVideoId = null;
+
+function onYouTubeIframeAPIReady() {
+  apiReady = true;
+
+  if (pendingVideoId) {
+    loadPlayer(pendingVideoId);
+    pendingVideoId = null;
+  }
+}
+
+
+function loadPlayer(videoId) {
+  if (!apiReady) {
+    pendingVideoId = videoId;
+    return;
+  }
+
+  if (player) {
+    player.loadVideoById(videoId);
+    return;
+  }
+
+  player = new YT.Player("youtube-frame", {
+      width: "100%",
+  height: "100%",
+    videoId,
+    playerVars: {
+      autoplay: 1,
+      controls: 1,
+    },
+  });
+}
+
+
+
+document.getElementById("playVideo").addEventListener("click", () => {
+  if (!player) return;
+  player.playVideo();
+  socket.emit("video-play", roomId);
+});
+
+document.getElementById("pauseVideo").addEventListener("click", () => {
+  if (!player) return;
+  player.pauseVideo();
+  socket.emit("video-pause", roomId);
+});
+
+
+socket.on("video-play", () => {
+  if (player) player.playVideo();
+});
+
+socket.on("video-pause", () => {
+  if (player) player.pauseVideo();
+});
+
+
 
 /* Fechar YouTube */
 closeYT.addEventListener("click", () => {
-  youtubeContainer.classList.remove("active");
-  youtubeFrame.src = "";
+    youtubeContainer.classList.remove("active");
+  if (player) player.stopVideo();
+  
 });
 
 /* Abrir YouTube clicando no ícone */
@@ -92,6 +162,14 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+
+
 socket.on("chat-message", (msg) => {
   addMessage(msg, "bot");
 });
+socket.on("open-video", (videoId) => {
+ youtubeContainer.classList.add("active");
+  loadPlayer(videoId);
+});
+
+window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;

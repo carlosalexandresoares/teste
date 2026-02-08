@@ -24,17 +24,25 @@ io.on("connection", (socket) => {
   });
 
   socket.on("chat-message", ({ roomId, msg }) => {
-    socket.to(roomId).emit("chat-message", msg);
+    io.to(roomId).emit("chat-message", msg);
   });
 
   socket.on("open-video", ({ roomId, videoId }) => {
-    socket.to(roomId).emit("open-video", videoId);
+    io.to(roomId).emit("open-video", videoId);
   });
+  socket.on("video-play", (roomId) => {
+  socket.to(roomId).emit("video-play");
+});
+
+socket.on("video-pause", (roomId) => {
+  socket.to(roomId).emit("video-pause");
+});
 
   socket.on("disconnect", () => {
     console.log("Usuário desconectado:", socket.id);
   });
 });
+
 
 
 server.listen(3000, () => {

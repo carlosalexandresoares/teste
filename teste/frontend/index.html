@@ -29,13 +29,11 @@
 
       <div class="youtube-container" id="youtube-container">
         <button class="close-yt" id="close-yt">✕</button>
-        <iframe
-          id="youtube-frame"
-          src=""
-          frameborder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen>
-        </iframe>
+        <div id="youtube-frame"></div>
+        <div class="video-controls">
+            <button id="playVideo">▶️ Play</button>
+            <button id="pauseVideo">⏸ Pause</button>
+        </div>
       </div>
 
       
@@ -56,6 +54,7 @@
     </div>
 
   </div>
+<script src="https://www.youtube.com/iframe_api"></script>
 
 </body>
 </html>
