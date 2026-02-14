@@ -23,6 +23,9 @@ const youtubeContainer = document.getElementById("youtube-container");
 const closeYT = document.getElementById("close-yt");
 const btnYoutube = document.getElementById("btn-youtube");
 
+const btnPlay = document.getElementById("playVideo");
+const btnPause = document.getElementById("pauseVideo");
+
 /* ================= CHAT ================= */
 
 btnEnviar.addEventListener("click", sendMessage);
@@ -35,7 +38,6 @@ function sendMessage() {
   if (!text) return;
 
   addMessage(text, "user");
-
   socket.emit("chat-message", { roomId, msg: text });
 
   checkYouTubeLink(text);
@@ -50,49 +52,78 @@ function addMessage(text, type) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-// recebe msg dos outros
 socket.on("chat-message", (msg) => addMessage(msg, "bot"));
 
-/* ================= YOUTUBE ================= */
+/* ================= YOUTUBE (API SAFE) ================= */
 
 let player = null;
 let playerReady = false;
-let pendingVideo = null;
+let pendingVideoId = null;
 
-/* API READY */
-window.onYouTubeIframeAPIReady = () => {
+function loadYouTubeAPI() {
+  return new Promise((resolve) => {
+    if (window.YT && window.YT.Player) return resolve();
+
+    // cria callback seguro
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof previous === "function") previous();
+      resolve();
+    };
+
+    // injeta script uma vez
+    const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+    if (!existing) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+  });
+}
+
+async function ensurePlayer() {
+  if (playerReady && player) return;
+
+  await loadYouTubeAPI();
+
   player = new YT.Player("youtube-frame", {
     width: "100%",
     height: "100%",
     playerVars: {
       autoplay: 1,
       controls: 1,
-      mute: 1, // 🔥 permite autoplay
+      mute: 1,          // ✅ autoplay permitido
+      playsinline: 1,
+      origin: window.location.origin, // ✅ ajuda em produção
     },
     events: {
       onReady: () => {
         playerReady = true;
 
-        if (pendingVideo) {
-          player.loadVideoById(pendingVideo);
-          pendingVideo = null;
+        // se tinha vídeo pendente, carrega agora
+        if (pendingVideoId) {
+          player.loadVideoById(pendingVideoId);
+          pendingVideoId = null;
 
           setTimeout(() => {
             if (player) player.playVideo();
-          }, 500);
+          }, 400);
         }
       },
       onStateChange: onPlayerStateChange,
-      onError: (e) => console.log("Erro YouTube:", e.data),
+      onError: (e) => {
+        console.log("Erro YouTube:", e.data);
+      },
     },
   });
-};
+}
 
-function loadVideo(videoId) {
+async function loadVideo(videoId) {
   youtubeContainer.classList.add("active");
+  await ensurePlayer();
 
   if (!playerReady) {
-    pendingVideo = videoId;
+    pendingVideoId = videoId;
     return;
   }
 
@@ -100,7 +131,7 @@ function loadVideo(videoId) {
 
   setTimeout(() => {
     if (player) player.playVideo();
-  }, 500);
+  }, 400);
 }
 
 function openYouTube(videoId) {
@@ -112,7 +143,7 @@ function openYouTube(videoId) {
   });
 }
 
-/* Pegar ID do YouTube (aceita links com &t=, &list= etc) */
+/* Pega ID do YouTube (funciona com &t=, playlist etc) */
 function checkYouTubeLink(text) {
   try {
     const url = new URL(text);
@@ -132,9 +163,9 @@ function checkYouTubeLink(text) {
   }
 }
 
-/* PLAYER EVENTS */
+/* PLAYER EVENTS (bloqueia loop) */
 function onPlayerStateChange(event) {
-  if (!playerReady) return;
+  if (!playerReady || !player) return;
   if (isSyncing) return;
 
   if (event.data === YT.PlayerState.PLAYING) {
@@ -154,19 +185,14 @@ function onPlayerStateChange(event) {
 
 /* ================= SOCKET VIDEO ================= */
 
-// 🔥 ESSENCIAL: receber o vídeo e carregar
-socket.on("open-video", (videoId) => {
+socket.on("open-video", async (videoId) => {
   isSyncing = true;
-  loadVideo(videoId);
-
-  setTimeout(() => {
-    isSyncing = false;
-  }, 800);
+  await loadVideo(videoId);
+  setTimeout(() => (isSyncing = false), 800);
 });
 
 socket.on("video-play", (time) => {
-  if (!playerReady) return;
-  if (player.getPlayerState && player.getPlayerState() === -1) return;
+  if (!playerReady || !player) return;
 
   isSyncing = true;
 
@@ -174,35 +200,26 @@ socket.on("video-play", (time) => {
   if (diff > 1) player.seekTo(time, true);
 
   player.playVideo();
-
-  setTimeout(() => {
-    isSyncing = false;
-  }, 500);
+  setTimeout(() => (isSyncing = false), 500);
 });
 
 socket.on("video-pause", (time) => {
-  if (!playerReady) return;
-  if (player.getPlayerState && player.getPlayerState() === -1) return;
+  if (!playerReady || !player) return;
 
   isSyncing = true;
 
   player.seekTo(time, true);
   player.pauseVideo();
-
-  setTimeout(() => {
-    isSyncing = false;
-  }, 500);
+  setTimeout(() => (isSyncing = false), 500);
 });
 
-/* ================= SINCRONIZAÇÃO (ENTRAR/ATUALIZAR) ================= */
-
-socket.on("sync-state", (state) => {
+socket.on("sync-state", async (state) => {
   if (!state.videoId) return;
 
-  loadVideo(state.videoId);
+  await loadVideo(state.videoId);
 
   const wait = setInterval(() => {
-    if (playerReady) {
+    if (playerReady && player) {
       clearInterval(wait);
 
       isSyncing = true;
@@ -212,18 +229,17 @@ socket.on("sync-state", (state) => {
       if (state.isPlaying) player.playVideo();
       else player.pauseVideo();
 
-      setTimeout(() => {
-        isSyncing = false;
-      }, 700);
+      setTimeout(() => (isSyncing = false), 700);
     }
   }, 200);
 });
 
 /* ================= CONTROLES ================= */
 
-document.getElementById("playVideo").addEventListener("click", () => {
-  if (!playerReady) return;
+btnPlay.addEventListener("click", () => {
+  if (!playerReady || !player) return;
 
+  player.unMute(); // ✅ se o usuário clicou, podemos tirar mute
   player.playVideo();
 
   socket.emit("video-play", {
@@ -232,8 +248,8 @@ document.getElementById("playVideo").addEventListener("click", () => {
   });
 });
 
-document.getElementById("pauseVideo").addEventListener("click", () => {
-  if (!playerReady) return;
+btnPause.addEventListener("click", () => {
+  if (!playerReady || !player) return;
 
   player.pauseVideo();
 

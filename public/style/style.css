@@ -58,16 +58,27 @@ h1 {
   background-color: #000;
   overflow: hidden;
   transition: height 0.3s ease;
+
+  /* ✅ novo */
+  display: flex;
+  flex-direction: column;
 }
 
 .youtube-container.active {
   height: 250px;
 }
 
+/* ✅ novo: o frame ocupa o espaço todo acima dos botões */
+#youtube-frame {
+  flex: 1;
+  min-height: 0;
+}
+
 .youtube-container iframe {
   width: 100%;
   height: 100%;
 }
+
 
 .close-yt {
   position: absolute;

@@ -1,61 +1,46 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chat Amino 2</title>
 
-  <link rel="stylesheet" href="style/style.css">
+  <link rel="stylesheet" href="style/style.css" />
   <script src="/socket.io/socket.io.js"></script>
-
-
   <script src="script/script.js" defer></script>
 </head>
 
 <body>
-
   <h1>Chat Amino 2</h1>
 
   <div class="container">
-
     <div class="container-lateral">
       <ul>
-        <li>
-          <img src="image/logo-yt.png" alt="YouTube" id="btn-youtube">
-        </li>
+        <li><img src="image/logo-yt.png" alt="YouTube" id="btn-youtube"></li>
       </ul>
     </div>
 
     <div class="chat-area">
-
       <div class="youtube-container" id="youtube-container">
         <button class="close-yt" id="close-yt">✕</button>
+
         <div id="youtube-frame"></div>
+
         <div class="video-controls">
-            <button id="playVideo">▶️ Play</button>
-            <button id="pauseVideo">⏸ Pause</button>
+          <button id="playVideo">▶️ Play</button>
+          <button id="pauseVideo">⏸ Pause</button>
         </div>
       </div>
 
-      
       <div class="messages" id="messages"></div>
 
-
       <div class="container-chat">
-        <input
-          type="text"
-          id="chat-dig"
-          placeholder="Digite sua mensagem..."
-        >
+        <input type="text" id="chat-dig" placeholder="Digite sua mensagem..." />
         <button id="enviar">
-          <img src="image/button-enviar.jpg" alt="Enviar">
+          <img src="image/button-enviar.jpg" alt="Enviar" />
         </button>
       </div>
-
     </div>
-
   </div>
-<script src="https://www.youtube.com/iframe_api"></script>
-
 </body>
 </html>
