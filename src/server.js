@@ -40,37 +40,38 @@ io.on("connection", (socket) => {
     socket.emit("sync-state", rooms[roomId]);
   });
 
-  socket.on("chat-message", ({ roomId, msg }) => {
-    socket.to(roomId).emit("chat-message", msg);
-  });
+socket.on("chat-message", ({ roomId, msg }) => {
+  io.to(roomId).emit("chat-message", msg);
+});
 
-  socket.on("open-video", ({ roomId, videoId }) => {
-    if (!rooms[roomId]) return;
+socket.on("open-video", ({ roomId, videoId }) => {
+  if (!rooms[roomId]) return;
 
-    rooms[roomId].videoId = videoId;
-    rooms[roomId].isPlaying = true;
-    rooms[roomId].currentTime = 0;
+  rooms[roomId].videoId = videoId;
+  rooms[roomId].isPlaying = true;
+  rooms[roomId].currentTime = 0;
 
-    socket.to(roomId).emit("open-video", videoId);
-  });
+  io.to(roomId).emit("open-video", videoId);
+});
 
-  socket.on("video-play", ({ roomId, currentTime }) => {
-    if (!rooms[roomId]) return;
+socket.on("video-play", ({ roomId, currentTime }) => {
+  if (!rooms[roomId]) return;
 
-    rooms[roomId].isPlaying = true;
-    rooms[roomId].currentTime = currentTime;
+  rooms[roomId].isPlaying = true;
+  rooms[roomId].currentTime = currentTime;
 
-    socket.to(roomId).emit("video-play", currentTime);
-  });
+  io.to(roomId).emit("video-play", currentTime);
+});
 
-  socket.on("video-pause", ({ roomId, currentTime }) => {
-    if (!rooms[roomId]) return;
+socket.on("video-pause", ({ roomId, currentTime }) => {
+  if (!rooms[roomId]) return;
 
-    rooms[roomId].isPlaying = false;
-    rooms[roomId].currentTime = currentTime;
+  rooms[roomId].isPlaying = false;
+  rooms[roomId].currentTime = currentTime;
 
-    socket.to(roomId).emit("video-pause", currentTime);
-  });
+  io.to(roomId).emit("video-pause", currentTime);
+});
+
 
   socket.on("video-time-update", ({ roomId, currentTime }) => {
     if (!rooms[roomId]) return;
