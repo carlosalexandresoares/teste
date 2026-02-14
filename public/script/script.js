@@ -28,19 +28,33 @@ const btnPause = document.getElementById("pauseVideo");
 
 /* ================= CHAT ================= */
 
-btnEnviar.addEventListener("click", sendMessage);
-input.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
+// ✅ click garantido
+btnEnviar.addEventListener("click", (e) => {
+  e.preventDefault();
+  sendMessage();
+});
+
+// ✅ enter garantido
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendMessage();
+  }
 });
 
 function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
 
+  // mostra para você
   addMessage(text, "user");
+
+  // envia para sala
   socket.emit("chat-message", { roomId, msg: text });
 
+  // tenta detectar youtube no texto
   checkYouTubeLink(text);
+
   input.value = "";
 }
 
@@ -52,9 +66,15 @@ function addMessage(text, type) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-socket.on("chat-message", (msg) => addMessage(msg, "bot"));
+// recebe msg dos outros
+socket.on("chat-message", (msg) => {
+  addMessage(msg, "bot");
 
-/* ================= YOUTUBE (ROBUSTO) ================= */
+  // ✅ se o outro mandar link do youtube, abre também
+  checkYouTubeLink(msg);
+});
+
+/* ================= YOUTUBE (API ROBUSTA) ================= */
 
 let player = null;
 let playerReady = false;
@@ -87,7 +107,7 @@ async function ensurePlayer() {
     width: "100%",
     height: "100%",
     playerVars: {
-      autoplay: 0,
+      autoplay: 1,
       controls: 1,
       mute: 1,
       playsinline: 1,
@@ -100,51 +120,19 @@ async function ensurePlayer() {
         if (pendingVideoId) {
           const v = pendingVideoId;
           pendingVideoId = null;
-          safeLoadAndPlay(v, 0, true);
+          loadVideo(v);
         }
       },
       onStateChange: onPlayerStateChange,
-      onError: (e) => {
-        console.log("Erro YouTube:", e.data);
-
-        // 🔥 fallback: recria o player se der erro
-        if (pendingVideoId) return;
-        // tenta recarregar o mesmo video se existir
-        tryRecreatePlayer();
-      },
+      onError: (e) => console.log("Erro YouTube:", e.data),
     },
   });
 }
 
-function destroyPlayer() {
-  try {
-    if (player && typeof player.destroy === "function") player.destroy();
-  } catch {}
-  player = null;
-  playerReady = false;
-}
-
-async function tryRecreatePlayer() {
-  const current = lastVideoId;
-  const time = lastKnownTime || 0;
-
-  destroyPlayer();
-  await ensurePlayer();
-
-  if (current) safeLoadAndPlay(current, time, false);
-}
-
-let lastVideoId = null;
-let lastKnownTime = 0;
-
-async function safeLoadAndPlay(videoId, time = 0, forcePlay = true) {
+async function loadVideo(videoId) {
   youtubeContainer.classList.add("active");
-
   await ensurePlayer();
 
-  lastVideoId = videoId;
-
-  // ainda não pronto? guarda
   if (!playerReady) {
     pendingVideoId = videoId;
     return;
@@ -152,56 +140,44 @@ async function safeLoadAndPlay(videoId, time = 0, forcePlay = true) {
 
   isSyncing = true;
 
-  // ✅ carrega sem forçar play instantâneo (evita erro)
-  player.loadVideoById(videoId, time);
+  // carrega e tenta dar play
+  player.loadVideoById(videoId);
 
-  // espera o player “acordar”
-  const start = Date.now();
-  const timer = setInterval(() => {
-    if (!player) return;
-
-    const state = player.getPlayerState?.();
-
-    // se já saiu do -1, podemos agir
-    if (state !== -1) {
-      clearInterval(timer);
-
-      // aplica seek e play com calma
-      try {
-        if (time > 0) player.seekTo(time, true);
-        if (forcePlay) player.playVideo();
-      } catch {}
-
-      setTimeout(() => {
-        isSyncing = false;
-      }, 600);
-    }
-
-    // timeout de segurança (2.5s)
-    if (Date.now() - start > 2500) {
-      clearInterval(timer);
-      isSyncing = false;
-    }
-  }, 150);
+  setTimeout(() => {
+    try {
+      player.playVideo();
+    } catch {}
+    isSyncing = false;
+  }, 600);
 }
 
 function openYouTube(videoId) {
-  // abre local
-  safeLoadAndPlay(videoId, 0, true);
+  loadVideo(videoId);
 
-  // avisa sala
-  socket.emit("open-video", { roomId, videoId });
+  socket.emit("open-video", {
+    roomId,
+    videoId,
+  });
 }
 
-/* PLAYER EVENTS (bloqueia loop) */
+/* ✅ detector que funciona mesmo com texto junto */
+function extractYouTubeId(text) {
+  const regex =
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/;
+
+  const match = text.match(regex);
+  return match ? match[1] : null;
+}
+
+function checkYouTubeLink(text) {
+  const id = extractYouTubeId(text);
+  if (id) openYouTube(id);
+}
+
+/* PLAYER EVENTS */
 function onPlayerStateChange(event) {
   if (!playerReady || !player) return;
   if (isSyncing) return;
-
-  // guarda tempo
-  try {
-    lastKnownTime = player.getCurrentTime();
-  } catch {}
 
   if (event.data === YT.PlayerState.PLAYING) {
     socket.emit("video-play", {
@@ -220,9 +196,8 @@ function onPlayerStateChange(event) {
 
 /* ================= SOCKET VIDEO ================= */
 
-// ✅ ESSENCIAL: quando receber open-video, carrega de forma segura
 socket.on("open-video", (videoId) => {
-  safeLoadAndPlay(videoId, 0, true);
+  loadVideo(videoId);
 });
 
 socket.on("video-play", (time) => {
@@ -252,20 +227,34 @@ socket.on("video-pause", (time) => {
   setTimeout(() => (isSyncing = false), 500);
 });
 
-/* ================= SYNC-STATE (quando entra/atualiza) ================= */
 socket.on("sync-state", (state) => {
   if (!state.videoId) return;
 
-  safeLoadAndPlay(state.videoId, state.currentTime || 0, state.isPlaying);
-});
+  loadVideo(state.videoId);
 
+  const wait = setInterval(() => {
+    if (playerReady && player) {
+      clearInterval(wait);
+
+      isSyncing = true;
+
+      try {
+        player.seekTo(state.currentTime || 0, true);
+        if (state.isPlaying) player.playVideo();
+        else player.pauseVideo();
+      } catch {}
+
+      setTimeout(() => (isSyncing = false), 700);
+    }
+  }, 200);
+});
 
 /* ================= CONTROLES ================= */
 
 btnPlay.addEventListener("click", () => {
   if (!playerReady || !player) return;
 
-  player.unMute(); // ✅ se o usuário clicou, podemos tirar mute
+  player.unMute();
   player.playVideo();
 
   socket.emit("video-play", {
@@ -292,11 +281,4 @@ closeYT.addEventListener("click", () => {
 
 btnYoutube.addEventListener("click", () => {
   youtubeContainer.classList.toggle("active");
-});
-
-/* Dark mode */
-document.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "d") {
-    document.body.classList.toggle("dark");
-  }
 });
