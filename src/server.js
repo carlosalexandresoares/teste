@@ -2,24 +2,22 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const path = require("path");
 
 const app = express();
 app.use(cors());
 
-// 🔥 SERVIR FRONTEND
-const path = require("path");
+// SERVIR FRONTEND (public está fora de src)
 app.use(express.static(path.join(__dirname, "../public")));
-
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
     origin: true,
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
-
 
 const rooms = {};
 
@@ -40,47 +38,49 @@ io.on("connection", (socket) => {
     socket.emit("sync-state", rooms[roomId]);
   });
 
-socket.on("chat-message", ({ roomId, msg }) => {
-  socket.to(roomId).emit("chat-message", msg);
-});
+  // CHAT (sem duplicar: envia só para os outros)
+  socket.on("chat-message", ({ roomId, msg }) => {
+    socket.to(roomId).emit("chat-message", msg);
+  });
 
-socket.on("open-video", ({ roomId, videoId }) => {
-  if (!rooms[roomId]) return;
+  // ABRIR VIDEO (aqui envia para TODOS)
+  socket.on("open-video", ({ roomId, videoId }) => {
+    if (!rooms[roomId]) return;
 
-  rooms[roomId].videoId = videoId;
-  rooms[roomId].isPlaying = true;
-  rooms[roomId].currentTime = 0;
+    rooms[roomId].videoId = videoId;
+    rooms[roomId].isPlaying = true;
+    rooms[roomId].currentTime = 0;
 
-  io.to(roomId).emit("open-video", videoId);
-});
+    io.to(roomId).emit("open-video", videoId);
+  });
 
-socket.on("video-play", ({ roomId, currentTime }) => {
-  if (!rooms[roomId]) return;
+  socket.on("video-play", ({ roomId, currentTime }) => {
+    if (!rooms[roomId]) return;
 
-  rooms[roomId].isPlaying = true;
-  rooms[roomId].currentTime = currentTime;
+    rooms[roomId].isPlaying = true;
+    rooms[roomId].currentTime = currentTime;
 
-  io.to(roomId).emit("video-play", currentTime);
-});
+    io.to(roomId).emit("video-play", currentTime);
+  });
 
-socket.on("video-pause", ({ roomId, currentTime }) => {
-  if (!rooms[roomId]) return;
+  socket.on("video-pause", ({ roomId, currentTime }) => {
+    if (!rooms[roomId]) return;
 
-  rooms[roomId].isPlaying = false;
-  rooms[roomId].currentTime = currentTime;
+    rooms[roomId].isPlaying = false;
+    rooms[roomId].currentTime = currentTime;
 
-  io.to(roomId).emit("video-pause", currentTime);
-});
-
+    io.to(roomId).emit("video-pause", currentTime);
+  });
 
   socket.on("video-time-update", ({ roomId, currentTime }) => {
     if (!rooms[roomId]) return;
     rooms[roomId].currentTime = currentTime;
   });
+
+  socket.on("disconnect", () => {
+    console.log("Usuário desconectado:", socket.id);
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-  console.log(`🔥 Servidor rodando na porta ${PORT}`);
-});
+server.listen(PORT, () => console.log(`🔥 Servidor rodando na porta ${PORT}`));
