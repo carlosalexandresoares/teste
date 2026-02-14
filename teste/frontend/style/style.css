@@ -41,6 +41,10 @@ h1 {
   cursor: pointer;
 }
 
+.container-lateral ul li{
+ list-style: none;
+}
+
 .chat-area {
   flex: 1;
   display: flex;
