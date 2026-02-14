@@ -1,85 +1,262 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
+const socket = io("http://localhost:3000");
 
-const app = express();
-app.use(cors());
+const params = new URLSearchParams(window.location.search);
+let roomId = params.get("sala");
 
-const server = http.createServer(app);
+if (!roomId) {
+  roomId = Math.random().toString(36).substring(2, 8);
+  window.location.search = `?sala=${roomId}`;
+}
 
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+socket.on("connect", () => {
+  socket.emit("join-room", roomId);
 });
 
-// 🔥 Estado das salas
-const rooms = {};
+/* ELEMENTOS */
+const input = document.getElementById("chat-dig");
+const btnEnviar = document.getElementById("enviar");
+const messages = document.getElementById("messages");
+const youtubeContainer = document.getElementById("youtube-container");
+const closeYT = document.getElementById("close-yt");
+const btnYoutube = document.getElementById("btn-youtube");
 
-io.on("connection", (socket) => {
-  console.log("Usuário conectado:", socket.id);
+/* ================= CHAT ================= */
 
-  socket.on("join-room", (roomId) => {
-    socket.join(roomId);
+btnEnviar.addEventListener("click", sendMessage);
 
-    // cria sala se não existir
-    if (!rooms[roomId]) {
-      rooms[roomId] = {
-        videoId: null,
-        isPlaying: false,
-        currentTime: 0,
-      };
+input.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+
+function sendMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+
+  addMessage(text, "user");
+
+  socket.emit("chat-message", {
+    roomId,
+    msg: text,
+  });
+
+  checkYouTubeLink(text);
+  input.value = "";
+}
+
+function addMessage(text, type) {
+  const msg = document.createElement("div");
+  msg.classList.add("message", type);
+  msg.textContent = text;
+  messages.appendChild(msg);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+socket.on("chat-message", (msg) => {
+  addMessage(msg, "bot");
+});
+
+/* ================= YOUTUBE ================= */
+
+let player = null;
+let apiReady = false;
+let pendingVideoId = null;
+let userInteracted = false;
+
+/* Detectar interação do usuário (para remover mute depois) */
+document.addEventListener("click", () => {
+  userInteracted = true;
+  if (player) player.unMute();
+});
+
+/* API pronta */
+function onYouTubeIframeAPIReady() {
+  apiReady = true;
+
+  if (pendingVideoId) {
+    createOrLoadPlayer(pendingVideoId);
+    pendingVideoId = null;
+  }
+}
+
+window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+
+/* Criar ou carregar player */
+function createOrLoadPlayer(videoId) {
+  if (!apiReady) {
+    pendingVideoId = videoId;
+    return;
+  }
+
+  if (player) {
+    player.loadVideoById(videoId);
+    forcePlay();
+    return;
+  }
+
+  player = new YT.Player("youtube-frame", {
+    width: "100%",
+    height: "100%",
+    videoId,
+    playerVars: {
+      autoplay: 1,
+      controls: 1,
+      mute: 1, // 🔥 permite autoplay automático
+    },
+    events: {
+      onReady: (event) => {
+        forcePlay();
+      },
+      onStateChange: onPlayerStateChange,
+    },
+  });
+}
+
+/* Forçar play sincronizado */
+function forcePlay() {
+  setTimeout(() => {
+    if (!player) return;
+    player.playVideo();
+  }, 800);
+}
+
+/* Abrir vídeo */
+function openYouTube(videoId) {
+  youtubeContainer.classList.add("active");
+
+  createOrLoadPlayer(videoId);
+
+  socket.emit("open-video", {
+    roomId,
+    videoId,
+  });
+}
+
+/* Detectar link */
+function checkYouTubeLink(text) {
+  const regex =
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/;
+
+  const match = text.match(regex);
+
+  if (match) {
+    openYouTube(match[1]);
+  }
+}
+
+/* Detectar play/pause */
+function onPlayerStateChange(event) {
+  if (!player) return;
+
+  if (event.data === YT.PlayerState.PLAYING) {
+    socket.emit("video-play", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+
+  if (event.data === YT.PlayerState.PAUSED) {
+    socket.emit("video-pause", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+}
+
+/* ================= SOCKET VIDEO ================= */
+
+socket.on("open-video", (videoId) => {
+  youtubeContainer.classList.add("active");
+  createOrLoadPlayer(videoId);
+});
+
+socket.on("video-play", (time) => {
+  if (!player) return;
+
+  const diff = Math.abs(player.getCurrentTime() - time);
+
+  if (diff > 1) {
+    player.seekTo(time);
+  }
+
+  player.playVideo();
+});
+
+socket.on("video-pause", (time) => {
+  if (!player) return;
+
+  player.seekTo(time);
+  player.pauseVideo();
+});
+
+/* Sincronização periódica */
+setInterval(() => {
+  if (player && player.getPlayerState() === 1) {
+    socket.emit("video-time-update", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+}, 2000);
+
+/* Estado da sala */
+socket.on("sync-state", (state) => {
+  if (!state.videoId) return;
+
+  youtubeContainer.classList.add("active");
+
+  createOrLoadPlayer(state.videoId);
+
+  setTimeout(() => {
+    if (!player) return;
+
+    player.seekTo(state.currentTime);
+
+    if (state.isPlaying) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
     }
+  }, 1200);
+});
 
-    // 🔥 envia estado atual para quem entrou depois
-    socket.emit("sync-state", rooms[roomId]);
-  });
+/* ================= CONTROLES ================= */
 
-  socket.on("chat-message", ({ roomId, msg }) => {
-    socket.to(roomId).emit("chat-message", msg);
-  });
+document.getElementById("playVideo").addEventListener("click", () => {
+  if (!player) return;
 
-  socket.on("open-video", ({ roomId, videoId }) => {
-    if (!rooms[roomId]) return;
+  player.playVideo();
 
-    rooms[roomId].videoId = videoId;
-    rooms[roomId].currentTime = 0;
-    rooms[roomId].isPlaying = true;
-
-    socket.to(roomId).emit("open-video", videoId);
-  });
-
-  socket.on("video-play", ({ roomId, currentTime }) => {
-    if (!rooms[roomId]) return;
-
-    rooms[roomId].isPlaying = true;
-    rooms[roomId].currentTime = currentTime;
-
-    socket.to(roomId).emit("video-play", currentTime);
-  });
-
-  socket.on("video-pause", ({ roomId, currentTime }) => {
-    if (!rooms[roomId]) return;
-
-    rooms[roomId].isPlaying = false;
-    rooms[roomId].currentTime = currentTime;
-
-    socket.to(roomId).emit("video-pause", currentTime);
-  });
-
-  socket.on("video-time-update", ({ roomId, currentTime }) => {
-    if (!rooms[roomId]) return;
-
-    rooms[roomId].currentTime = currentTime;
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Usuário desconectado:", socket.id);
+  socket.emit("video-play", {
+    roomId,
+    currentTime: player.getCurrentTime(),
   });
 });
 
-server.listen(3000, () => {
-  console.log("🔥 Servidor rodando em http://localhost:3000");
+document.getElementById("pauseVideo").addEventListener("click", () => {
+  if (!player) return;
+
+  player.pauseVideo();
+
+  socket.emit("video-pause", {
+    roomId,
+    currentTime: player.getCurrentTime(),
+  });
+});
+
+/* Fechar */
+closeYT.addEventListener("click", () => {
+  youtubeContainer.classList.remove("active");
+  if (player) player.stopVideo();
+});
+
+/* Toggle YouTube */
+btnYoutube.addEventListener("click", () => {
+  youtubeContainer.classList.toggle("active");
+});
+
+/* Dark mode */
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "d") {
+    document.body.classList.toggle("dark");
+  }
 });
