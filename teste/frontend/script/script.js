@@ -1,9 +1,5 @@
 const socket = io("http://localhost:3000");
 
-socket.on("connect", () => {
-  console.log("Conectado ao servidor:", socket.id);
-});
-
 const params = new URLSearchParams(window.location.search);
 let roomId = params.get("sala");
 
@@ -17,17 +13,17 @@ socket.on("connect", () => {
   socket.emit("join-room", roomId);
 });
 
-
+/* ELEMENTOS */
 const input = document.getElementById("chat-dig");
 const btnEnviar = document.getElementById("enviar");
 const messages = document.getElementById("messages");
 
 const youtubeContainer = document.getElementById("youtube-container");
-const youtubeFrame = document.getElementById("youtube-frame");
 const closeYT = document.getElementById("close-yt");
 const btnYoutube = document.getElementById("btn-youtube");
 
-/* Enviar mensagem */
+/* ================= CHAT ================= */
+
 btnEnviar.addEventListener("click", sendMessage);
 
 input.addEventListener("keypress", (e) => {
@@ -49,8 +45,6 @@ function sendMessage() {
   input.value = "";
 }
 
-
-/* Criar bolha */
 function addMessage(text, type) {
   const msg = document.createElement("div");
   msg.classList.add("message", type);
@@ -59,44 +53,30 @@ function addMessage(text, type) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-/* Detectar link do YouTube */
-function checkYouTubeLink(text) {
-  const regex =
-    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/;
+socket.on("chat-message", (msg) => {
+  addMessage(msg, "bot");
+});
 
-  const match = text.match(regex);
+/* ================= YOUTUBE ================= */
 
-  if (match) {
-    openYouTube(match[1]);
-  }
-}
-
-/* Abrir YouTube */
-function openYouTube(videoId) {
-   youtubeContainer.classList.add("active");
-  loadPlayer(videoId);
-
-  socket.emit("open-video", {
-    roomId,
-    videoId,
-  });
-}
-
-let player;
+let player = null;
 let apiReady = false;
 let pendingVideoId = null;
 
+/* API pronta */
 function onYouTubeIframeAPIReady() {
   apiReady = true;
 
   if (pendingVideoId) {
-    loadPlayer(pendingVideoId);
+    createOrLoadPlayer(pendingVideoId);
     pendingVideoId = null;
   }
 }
 
+window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
 
-function loadPlayer(videoId) {
+/* Criar ou carregar player */
+function createOrLoadPlayer(videoId) {
   if (!apiReady) {
     pendingVideoId = videoId;
     return;
@@ -108,68 +88,159 @@ function loadPlayer(videoId) {
   }
 
   player = new YT.Player("youtube-frame", {
-      width: "100%",
-  height: "100%",
+    width: "100%",
+    height: "100%",
     videoId,
     playerVars: {
       autoplay: 1,
       controls: 1,
     },
+    events: {
+      onStateChange: onPlayerStateChange,
+    },
   });
 }
 
+/* Abrir vídeo */
+function openYouTube(videoId) {
+  youtubeContainer.classList.add("active");
 
+  createOrLoadPlayer(videoId);
+
+  socket.emit("open-video", {
+    roomId,
+    videoId,
+  });
+}
+
+/* Detectar link */
+function checkYouTubeLink(text) {
+  const regex =
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/;
+
+  const match = text.match(regex);
+
+  if (match) {
+    openYouTube(match[1]);
+  }
+}
+
+/* Play / Pause eventos */
+function onPlayerStateChange(event) {
+  if (!player) return;
+
+  if (event.data === YT.PlayerState.PLAYING) {
+    socket.emit("video-play", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+
+  if (event.data === YT.PlayerState.PAUSED) {
+    socket.emit("video-pause", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+}
+
+/* ================= SOCKET VIDEO ================= */
+
+socket.on("open-video", (videoId) => {
+  youtubeContainer.classList.add("active");
+  createOrLoadPlayer(videoId);
+});
+
+socket.on("video-play", (time) => {
+  if (!player) return;
+
+  const diff = Math.abs(player.getCurrentTime() - time);
+
+  if (diff > 1) {
+    player.seekTo(time);
+  }
+
+  player.playVideo();
+});
+
+socket.on("video-pause", (time) => {
+  if (!player) return;
+
+  player.seekTo(time);
+  player.pauseVideo();
+});
+
+/* Sincronização periódica */
+setInterval(() => {
+  if (player && player.getPlayerState() === 1) {
+    socket.emit("video-time-update", {
+      roomId,
+      currentTime: player.getCurrentTime(),
+    });
+  }
+}, 2000);
+
+/* Estado da sala */
+socket.on("sync-state", (state) => {
+  if (!state.videoId) return;
+
+  youtubeContainer.classList.add("active");
+
+  createOrLoadPlayer(state.videoId);
+
+  setTimeout(() => {
+    if (!player) return;
+
+    player.seekTo(state.currentTime);
+
+    if (state.isPlaying) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
+    }
+  }, 1500);
+});
+
+/* ================= CONTROLES ================= */
 
 document.getElementById("playVideo").addEventListener("click", () => {
   if (!player) return;
+
+  const time = player.getCurrentTime();
+
   player.playVideo();
-  socket.emit("video-play", roomId);
+
+  socket.emit("video-play", {
+    roomId,
+    currentTime: time,
+  });
 });
 
 document.getElementById("pauseVideo").addEventListener("click", () => {
   if (!player) return;
+
   player.pauseVideo();
-  socket.emit("video-pause", roomId);
+
+  socket.emit("video-pause", {
+    roomId,
+    currentTime: player.getCurrentTime(),
+  });
 });
 
-
-socket.on("video-play", () => {
-  if (player) player.playVideo();
-});
-
-socket.on("video-pause", () => {
-  if (player) player.pauseVideo();
-});
-
-
-
-/* Fechar YouTube */
+/* Fechar */
 closeYT.addEventListener("click", () => {
-    youtubeContainer.classList.remove("active");
+  youtubeContainer.classList.remove("active");
   if (player) player.stopVideo();
-  
 });
 
-/* Abrir YouTube clicando no ícone */
+/* Toggle botão YouTube */
 btnYoutube.addEventListener("click", () => {
   youtubeContainer.classList.toggle("active");
 });
 
-/* Dark mode (tecla D) */
+/* Dark mode */
 document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "d") {
     document.body.classList.toggle("dark");
   }
 });
-
-
-
-socket.on("chat-message", (msg) => {
-  addMessage(msg, "bot");
-});
-socket.on("open-video", (videoId) => {
- youtubeContainer.classList.add("active");
-  loadPlayer(videoId);
-});
-
-window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;

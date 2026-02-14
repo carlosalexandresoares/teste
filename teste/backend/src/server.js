@@ -15,35 +15,70 @@ const io = new Server(server, {
   },
 });
 
+// 🔥 Estado das salas
+const rooms = {};
+
 io.on("connection", (socket) => {
   console.log("Usuário conectado:", socket.id);
 
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
-    console.log(`Usuário ${socket.id} entrou na sala ${roomId}`);
+
+    // cria sala se não existir
+    if (!rooms[roomId]) {
+      rooms[roomId] = {
+        videoId: null,
+        isPlaying: false,
+        currentTime: 0,
+      };
+    }
+
+    // 🔥 envia estado atual para quem entrou depois
+    socket.emit("sync-state", rooms[roomId]);
   });
 
   socket.on("chat-message", ({ roomId, msg }) => {
-    io.to(roomId).emit("chat-message", msg);
+    socket.to(roomId).emit("chat-message", msg);
   });
 
   socket.on("open-video", ({ roomId, videoId }) => {
-    io.to(roomId).emit("open-video", videoId);
-  });
-  socket.on("video-play", (roomId) => {
-  socket.to(roomId).emit("video-play");
-});
+    if (!rooms[roomId]) return;
 
-socket.on("video-pause", (roomId) => {
-  socket.to(roomId).emit("video-pause");
-});
+    rooms[roomId].videoId = videoId;
+    rooms[roomId].currentTime = 0;
+    rooms[roomId].isPlaying = true;
+
+    socket.to(roomId).emit("open-video", videoId);
+  });
+
+  socket.on("video-play", ({ roomId, currentTime }) => {
+    if (!rooms[roomId]) return;
+
+    rooms[roomId].isPlaying = true;
+    rooms[roomId].currentTime = currentTime;
+
+    socket.to(roomId).emit("video-play", currentTime);
+  });
+
+  socket.on("video-pause", ({ roomId, currentTime }) => {
+    if (!rooms[roomId]) return;
+
+    rooms[roomId].isPlaying = false;
+    rooms[roomId].currentTime = currentTime;
+
+    socket.to(roomId).emit("video-pause", currentTime);
+  });
+
+  socket.on("video-time-update", ({ roomId, currentTime }) => {
+    if (!rooms[roomId]) return;
+
+    rooms[roomId].currentTime = currentTime;
+  });
 
   socket.on("disconnect", () => {
     console.log("Usuário desconectado:", socket.id);
   });
 });
-
-
 
 server.listen(3000, () => {
   console.log("🔥 Servidor rodando em http://localhost:3000");
