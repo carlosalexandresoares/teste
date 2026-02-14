@@ -1,3 +1,5 @@
+let isSyncing = false;
+
 const socket = io();
 
 
@@ -128,9 +130,9 @@ function checkYouTubeLink(text) {
 }
 
 /* PLAYER EVENTS */
-
 function onPlayerStateChange(event) {
   if (!playerReady) return;
+  if (isSyncing) return; // 🔥 BLOQUEIA LOOP
 
   if (event.data === YT.PlayerState.PLAYING) {
     socket.emit("video-play", {
@@ -148,27 +150,34 @@ function onPlayerStateChange(event) {
 }
 
 /* ================= SOCKET VIDEO ================= */
-
-socket.on("open-video", videoId => {
-  loadVideo(videoId);
-});
-
 socket.on("video-play", time => {
   if (!playerReady) return;
 
-  const diff = Math.abs(player.getCurrentTime() - time);
+  isSyncing = true;
 
+  const diff = Math.abs(player.getCurrentTime() - time);
   if (diff > 1) player.seekTo(time);
 
   player.playVideo();
+
+  setTimeout(() => {
+    isSyncing = false;
+  }, 500);
 });
 
 socket.on("video-pause", time => {
   if (!playerReady) return;
 
+  isSyncing = true;
+
   player.seekTo(time);
   player.pauseVideo();
+
+  setTimeout(() => {
+    isSyncing = false;
+  }, 500);
 });
+
 
 /* ================= SINCRONIZAÇÃO REAL ================= */
 
