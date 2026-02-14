@@ -152,12 +152,8 @@ async function loadVideo(videoId) {
 }
 
 function openYouTube(videoId) {
-  loadVideo(videoId);
 
-  socket.emit("open-video", {
-    roomId,
-    videoId,
-  });
+  socket.emit("open-video", { roomId, videoId });
 }
 
 /* ✅ detector que funciona mesmo com texto junto */

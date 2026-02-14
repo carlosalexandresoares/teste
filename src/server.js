@@ -51,7 +51,8 @@ io.on("connection", (socket) => {
     rooms[roomId].isPlaying = true;
     rooms[roomId].currentTime = 0;
 
-    io.to(roomId).emit("open-video", videoId);
+   socket.to(roomId).emit("open-video", videoId);
+
   });
 
   socket.on("video-play", ({ roomId, currentTime }) => {
