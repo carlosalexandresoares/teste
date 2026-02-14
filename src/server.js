@@ -41,7 +41,7 @@ io.on("connection", (socket) => {
   });
 
 socket.on("chat-message", ({ roomId, msg }) => {
-  io.to(roomId).emit("chat-message", msg);
+  socket.to(roomId).emit("chat-message", msg);
 });
 
 socket.on("open-video", ({ roomId, videoId }) => {
